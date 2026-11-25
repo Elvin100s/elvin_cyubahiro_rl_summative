@@ -6,6 +6,7 @@ uv run main.py --view 3d --race         # best DQN vs REINFORCE vs PPO vs A2C si
 uv run main.py --choose                 # pick the model to fly from a table
 uv run main.py --algo dqn --view none   # terminal only
 """
+
 import argparse
 import json
 from pathlib import Path
@@ -94,6 +95,7 @@ def main():
     parser.add_argument("--scenario", choices=list(SCENARIOS), default="standard")
     parser.add_argument("--fps", type=int, default=5, help="simulation steps per second")
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--hq", action="store_true", help="3D view at full quality (shadows, denser forest)")
     parser.add_argument("--race", action="store_true", help="3D: race the best model of every algorithm")
     parser.add_argument("--choose", action="store_true", help="pick which trained model to fly from the table")
     args = parser.parse_args()
@@ -133,7 +135,7 @@ def run_3d(args, agents):
     app = create_app(race, args.scenario, args.seed, fps=args.fps)
     url = f"http://127.0.0.1:{args.port}"
     print(f"\n3D view running at {url} (opening the browser; Ctrl+C to stop). API docs: {url}/docs")
-    threading.Timer(1.5, webbrowser.open, [url]).start()
+    threading.Timer(1.5, webbrowser.open, [url + ("/?hq" if args.hq else "")]).start()
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
 
 
@@ -142,6 +144,8 @@ def fly_shift(env, policy, seed, number):
     print(f"\n=== Shift {number} (seed {seed}) | {env.label} ===")
     if env.render_mode:
         env.render()
+        print("Press SPACE (or click) in the window to start; SPACE pauses and resumes.", flush=True)
+        env.renderer.hold(env, "Press SPACE or click to start the shift")
     done, last_event = False, env.last_event
     while not done:
         obs, reward, terminated, truncated, info = env.step(policy(env, obs))
@@ -153,6 +157,8 @@ def fly_shift(env, policy, seed, number):
     s = env.stats
     print(f"--- Shift over: reward {env.total_reward:+.1f} | delivered {s['delivered']} (urgent {s['urgent_delivered']}) | "
           f"expired {s['expired']} (urgent {s['urgent_expired']}) | {'CRASHED' if s['crashed'] else 'drone safe'}")
+    if env.render_mode:
+        env.renderer.hold(env, f"Shift over: {env.total_reward:+.1f}, {s['delivered']} deliveries  ·  SPACE to close")
 
 
 if __name__ == "__main__":

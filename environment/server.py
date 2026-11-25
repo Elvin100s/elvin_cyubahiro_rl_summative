@@ -3,7 +3,7 @@
 GET  /               three.js page
 GET  /api/meta       map layout, actions, observation fields and loaded agents
 POST /api/act        {"observation": [32 floats], "agent": "PPO"} -> chosen action and its scores
-WS   /ws             one JSON frame per step; accepts {"type": "emergency", "clinic": i} | "pause" | "reset" | "speed"
+WS   /ws             one JSON frame per step; accepts {"type": "emergency", "clinic": i} | "start" | "pause" | "next" | "reset" | "speed"
 """
 import asyncio
 import copy
@@ -176,7 +176,7 @@ def create_app(agents, scenario="standard", seed=10_000, fps=4, verbose=True):
     async def stream(ws: WebSocket):
         await ws.accept()
         race = Race(agents, scenario, seed, verbose)
-        state = {"paused": False, "fps": fps}
+        state = {"paused": True, "fps": fps}
 
         async def listen():
             while True:
@@ -186,24 +186,23 @@ def create_app(agents, scenario="standard", seed=10_000, fps=4, verbose=True):
                     race.emergency(int(message["clinic"]))
                 elif kind == "pause":
                     state["paused"] = not state["paused"]
-                elif kind == "reset":
+                elif kind == "start":
+                    state["paused"] = False
+                elif kind in ("reset", "next"):
                     race.next_shift()
+                    state["paused"] = kind == "reset"
                 elif kind == "speed":
                     state["fps"] = max(1, min(20, int(message.get("fps", fps))))
+                    if verbose:
+                        print(f"--- speed: {state['fps']} steps/s", flush=True)
 
         listener = asyncio.create_task(listen())
         await ws.send_json(meta())
         await ws.send_json(race.frame(**state))
-        finished_at = None
         try:
             while not listener.done():
                 await asyncio.sleep(1 / state["fps"])
-                if race.finished:
-                    finished_at = finished_at or asyncio.get_running_loop().time()
-                    if asyncio.get_running_loop().time() - finished_at > 6:
-                        race.next_shift()
-                        finished_at = None
-                elif not state["paused"]:
+                if not race.finished and not state["paused"]:
                     race.step()
                 await ws.send_json(race.frame(**state))
         except (WebSocketDisconnect, RuntimeError):

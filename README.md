@@ -15,7 +15,9 @@ uv run play.py                 # same as main.py
 
 A rendered tour of the results (environment, sweeps, figures, the best agent flying a shift, the policy API) is in [`notebooks/showcase.ipynb`](notebooks/showcase.ipynb); rebuild it with `uv run python notebooks/build_showcase.py`.
 
-Useful flags: `--algo {dqn,reinforce,ppo,a2c}`, `--scenario {standard,quiet,high_demand,urgent_surge}`, `--episodes N`, `--fps N`, `--view none`.
+Both views wait for you: press **SPACE** (or click) to start the 2D shift and SPACE to pause, or click **▶ Start shift** in the 3D view.
+
+Useful flags: `--algo {dqn,reinforce,ppo,a2c}`, `--scenario {standard,quiet,high_demand,urgent_surge}`, `--episodes N`, `--fps N`, `--view none`, `--hq` (3D at full quality: shadows and a denser forest; the default is a lighter scene that runs on integrated graphics).
 
 ## Environment
 

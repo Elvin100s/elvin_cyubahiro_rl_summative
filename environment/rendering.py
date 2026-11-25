@@ -88,6 +88,8 @@ class Renderer:
             for event in pg.event.get():
                 if event.type == pg.QUIT:
                     raise SystemExit
+                if event.type == pg.KEYDOWN and event.key == pg.K_SPACE:
+                    self.hold(env, "Paused  ·  press SPACE to resume", self.prev_drone)
             t = i / SUBFRAMES
             pos = tuple(p + (c - p) * t for p, c in zip(self.prev_drone, current))
             self._frame(env, pos, t)
@@ -97,6 +99,34 @@ class Renderer:
             self.trail = (self.trail + [self.prev_drone])[-12:]
         self.prev_drone = current
         return None
+
+    def hold(self, env, message, drone_pos=None):
+        """Freeze on the current state until SPACE, Enter or a click (human mode only)."""
+        if self.mode != "human":
+            return
+        pg = self.pg
+        if self.prev_drone is None:
+            self.prev_drone = tuple(env.drone)
+            self._observe(env)
+        pos = drone_pos or tuple(env.drone)
+        while True:
+            for event in pg.event.get():
+                if event.type == pg.QUIT:
+                    raise SystemExit
+                if (event.type == pg.KEYDOWN and event.key in (pg.K_SPACE, pg.K_RETURN)) or event.type == pg.MOUSEBUTTONDOWN:
+                    return
+            self._frame(env, pos, 1.0)
+            self._banner(message)
+            pg.display.flip()
+            self.clock.tick(30)
+
+    def _banner(self, message):
+        image = self.font[26].render(message, True, INK)
+        box = image.get_rect(center=(MAP / 2, 34)).inflate(36, 20)
+        panel = self.pg.Surface(box.size, self.pg.SRCALPHA)
+        self.pg.draw.rect(panel, (12, 17, 24, 215), panel.get_rect(), border_radius=10)
+        self.screen.blit(panel, box)
+        self.screen.blit(image, image.get_rect(center=box.center))
 
     def close(self):
         self.pg.quit()
@@ -368,7 +398,8 @@ class Renderer:
         height, gap = 40, 6
         bar_w = (width - gap * 6) / 7
         if scores is None:
-            self._text(self.screen, "baseline policy: no network scores", (left, y + 14), 18, FAINT)
+            text = "shown from its first decision" if env.steps == 0 else "baseline policy: no network scores"
+            self._text(self.screen, text, (left, y + 14), 18, FAINT)
             return y + height + 22
         valid = [s for s in scores if s is not None]
         lo, hi = min(valid), max(valid)

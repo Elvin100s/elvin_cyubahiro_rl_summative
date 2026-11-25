@@ -50,6 +50,12 @@
   .badge small { display: block; font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 3px; }
   #hint { position: absolute; right: 14px; bottom: 12px; color: var(--muted); background: var(--panel); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 12px; }
   #hint i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin: 0 4px 0 10px; }
+  #control { position: absolute; left: calc(50% + 160px); top: 72%; transform: translate(-50%, -50%); padding: 16px 30px; font-size: 20px; font-weight: 700;
+             border-radius: 12px; background: rgba(46, 125, 255, 0.92); border: 1px solid #8fb8ff; color: #fff; box-shadow: 0 8px 30px rgba(0,0,0,.35); display: none; }
+  #control:hover { background: #2e7dff; }
+  #alert { position: absolute; left: calc(50% + 160px); top: 16px; transform: translateX(-50%); padding: 10px 20px; border-radius: 10px; display: none;
+           background: rgba(200, 40, 40, 0.94); border: 1px solid #ff9a98; color: #fff; font-weight: 700; font-size: 16px; text-align: center; box-shadow: 0 8px 26px rgba(0,0,0,.35); }
+  #alert small { display: block; font-weight: 500; font-size: 12px; opacity: .9; margin-top: 2px; }
   #status { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); color: var(--muted); background: var(--panel); padding: 8px 14px; border-radius: 6px; border: 1px solid var(--line); }
 </style>
 <script type="importmap">
@@ -71,6 +77,8 @@
   <button id="reset">New shift</button>
 </header>
 <div id="stage">
+  <button id="control"></button>
+  <div id="alert"></div>
   <div id="status">Waiting for the Python server…</div>
   <div id="hint">Glowing route = where its policy flies next · click a clinic to raise an emergency · drag to orbit
     <i style="background:var(--urgent)"></i>urgent<i style="background:var(--routine)"></i>routine<i style="background:#8b97a6"></i>none</div>
@@ -83,12 +91,13 @@ import { Sky } from "three/addons/objects/Sky.js";
 const ACTION_SHORT = ["N", "S", "W", "E", "Load", "Drop", "Chg"];
 const HEX = { urgent: 0xef5350, routine: 0xf5b041, idle: 0x8b97a6, ok: 0x4cc77d };
 const PLAY = 5.3, LAKE = { x: -5.1, z: 0.7, rx: 1.15, rz: 2.9 };
+const HQ = new URLSearchParams(location.search).has("hq");
 const stage = document.getElementById("stage");
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+const renderer = new THREE.WebGLRenderer({ antialias: HQ, powerPreference: "high-performance" });
+renderer.setPixelRatio(HQ ? Math.min(window.devicePixelRatio, 1.5) : 1);
 renderer.setScissorTest(true);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.62;
+renderer.toneMappingExposure = 0.68;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 stage.prepend(renderer.domElement);
 
@@ -190,7 +199,7 @@ function grassTexture() {
 }
 
 function terrain(rich) {
-  const n = rich ? 200 : 90;
+  const n = rich && HQ ? 200 : rich ? 110 : 90;
   const geometry = new THREE.PlaneGeometry(46, 46, n, n);
   geometry.rotateX(-Math.PI / 2);
   const pos = geometry.attributes.position;
@@ -233,8 +242,8 @@ function waterNormals() {
 
 function water() {
   const normals = waterNormals();
-  const mesh = new THREE.Mesh(new THREE.CircleGeometry(1, 96), new THREE.MeshPhysicalMaterial({
-    color: "#1d5f86", roughness: 0.06, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08,
+  const mesh = new THREE.Mesh(new THREE.CircleGeometry(1, 96), new (HQ ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial)({
+    color: "#1d5f86", roughness: 0.06, metalness: 0, ...(HQ && { clearcoat: 1, clearcoatRoughness: 0.08 }),
     normalMap: normals, normalScale: new THREE.Vector2(0.45, 0.45), transparent: true, opacity: 0.94 }));
   mesh.rotation.x = -Math.PI / 2;
   mesh.scale.set(LAKE.rx * 1.02, LAKE.rz * 1.02, 1);
@@ -275,7 +284,8 @@ function roads(scene, clinics) {
 }
 
 function trees(scene, rich) {
-  const counts = { broad: rich ? 460 : 150, tall: rich ? 150 : 50 };
+  const counts = { broad: rich && HQ ? 460 : 200, tall: rich && HQ ? 150 : 70 };
+  const extra = HQ ? counts.broad : 0;
   const bark = new THREE.MeshStandardMaterial({ color: "#4e3622", roughness: 1 });
   const leaves = new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.95 });
   const blob = new THREE.IcosahedronGeometry(0.15, 1);
@@ -283,8 +293,8 @@ function trees(scene, rich) {
   const meshes = {
     trunk: new THREE.InstancedMesh(new THREE.CylinderGeometry(0.02, 0.032, 0.22, 6), bark, counts.broad + counts.tall),
     crownA: new THREE.InstancedMesh(blob, leaves, counts.broad),
-    crownB: new THREE.InstancedMesh(blob, leaves, counts.broad),
-    crownC: new THREE.InstancedMesh(blob, leaves, counts.broad),
+    crownB: new THREE.InstancedMesh(blob, leaves, extra),
+    crownC: new THREE.InstancedMesh(blob, leaves, extra),
     spire: new THREE.InstancedMesh(spire, leaves, counts.tall),
   };
   const avoid = [meta.depot, ...Object.values(meta.clinics)].map(p => cell(...p));
@@ -307,9 +317,9 @@ function trees(scene, rich) {
       const green = () => new THREE.Color().setHSL(0.25 + rand() * 0.08, 0.5 + rand() * 0.15, 0.15 + rand() * 0.09);
       if (kind === "broad") {
         place(meshes.trunk, trunkIndex++, x, y + 0.11 * k, z, k, k, k);
-        place(meshes.crownA, placed, x, y + 0.3 * k, z, 1.25 * k, 1.0 * k, 1.25 * k, green());
-        place(meshes.crownB, placed, x + 0.09 * k, y + 0.27 * k, z + 0.05 * k, 0.9 * k, 0.8 * k, 0.9 * k, green());
-        place(meshes.crownC, placed, x - 0.07 * k, y + 0.36 * k, z - 0.06 * k, 0.85 * k, 0.75 * k, 0.85 * k, green());
+        place(meshes.crownA, placed, x, y + 0.3 * k, z, (extra ? 1.25 : 1.5) * k, (extra ? 1.0 : 1.2) * k, (extra ? 1.25 : 1.5) * k, green());
+        if (extra) place(meshes.crownB, placed, x + 0.09 * k, y + 0.27 * k, z + 0.05 * k, 0.9 * k, 0.8 * k, 0.9 * k, green());
+        if (extra) place(meshes.crownC, placed, x - 0.07 * k, y + 0.36 * k, z - 0.06 * k, 0.85 * k, 0.75 * k, 0.85 * k, green());
       } else {
         place(meshes.trunk, trunkIndex++, x, y + 0.1 * k, z, k, k * 0.9, k);
         place(meshes.spire, placed, x, y + 0.42 * k, z, k, k * 1.2, k, new THREE.Color().setHSL(0.3 + rand() * 0.05, 0.45, 0.13 + rand() * 0.06));
@@ -317,7 +327,7 @@ function trees(scene, rich) {
       placed++;
     }
   }
-  Object.values(meshes).forEach(mesh => { mesh.castShadow = rich; mesh.receiveShadow = true; scene.add(mesh); });
+  Object.values(meshes).forEach(mesh => { mesh.castShadow = rich && HQ; mesh.receiveShadow = true; scene.add(mesh); });
 }
 
 function clouds(scene) {
@@ -465,7 +475,7 @@ function droneMesh(color) {
     return box;
   });
   group.traverse(o => { if (o.isMesh) o.castShadow = true; });
-  const trail = new THREE.Line(new THREE.BufferGeometry().setFromPoints(Array(20).fill(new THREE.Vector3())),
+  const trail = new THREE.Line(new THREE.BufferGeometry().setFromPoints(Array(21).fill(new THREE.Vector3())),
     new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.6 }));
   return { group, rotors, boxes, bodyMat, leds: [ledFront, ledBack], trail, history: [], heading: 0 };
 }
@@ -532,10 +542,10 @@ function buildWorld(agent, rich) {
   const sky = makeSky();
   scene.add(sky);
   scene.fog = new THREE.FogExp2("#cfe0ee", rich ? 0.011 : 0.016);
-  scene.environmentIntensity = 0.42;
+  scene.environmentIntensity = 0.6;
   const hemi = new THREE.HemisphereLight("#dbe9ff", "#5a6b3a", 0.35);
   const sun = new THREE.DirectionalLight("#fff5e6", 3);
-  if (rich) {
+  if (rich && HQ) {
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     Object.assign(sun.shadow.camera, { left: -9, right: 9, top: 9, bottom: -9, near: 1, far: 60 });
@@ -614,7 +624,7 @@ const batteryColor = level => level > 0.5 ? "var(--ok)" : level > 0.25 ? "var(--
 const signed = v => `${v >= 0 ? "+" : ""}${v.toFixed(1)}`;
 
 function thinking(d) {
-  if (!d.scores) return `<div class="label">WHAT IT'S WEIGHING</div><div class="sub">baseline policy: no network scores</div>`;
+  if (!d.scores) return `<div class="label">WHAT IT'S WEIGHING</div><div class="sub">${frame.step === 0 ? "shown from its first decision" : "baseline policy: no network scores"}</div>`;
   const valid = d.scores.filter(s => s !== null);
   const lo = Math.min(...valid), hi = Math.max(...valid), top = d.scores.indexOf(hi);
   const height = s => s === null ? 0 : d.score_kind === "probability" ? s : 0.12 + 0.88 * (s - lo) / ((hi - lo) || 1);
@@ -629,12 +639,33 @@ function nextStop(plan) {
   return plan.kind === "home" ? "Kigali depot" : "en route";
 }
 
+const SLOW_FPS = 2, SLOW_STEPS = 10;
+let slow = null;
+
+function slowMotion(clinic, previous) {
+  const alert = document.getElementById("alert");
+  alert.innerHTML = `⚠ RE-ROUTE · new URGENT request at ${clinic}<small>${previous ? `switching from ${previous} · ` : ""}slow motion</small>`;
+  alert.style.display = "block";
+  if (!slow) slow = { restoreFps: frame.fps };
+  slow.until = frame.step + SLOW_STEPS;
+  send({ type: "speed", fps: SLOW_FPS });
+}
+
+function endSlowMotion() {
+  if (!slow || frame.step < slow.until) return;
+  send({ type: "speed", fps: slow.restoreFps });
+  document.getElementById("alert").style.display = "none";
+  slow = null;
+}
+
 function checkReroute(world, d) {
   const key = d.plan ? `${d.plan.kind}:${d.plan.clinic}` : "";
   const delivered = d.stats.delivered !== world.lastDelivered;
   if (world.planKey && key !== world.planKey && d.plan?.kind === "deliver" && d.plan.urgent && !delivered) {
+    const previous = world.planKey.startsWith("deliver:") ? world.planKey.slice(8) : world.planKey.startsWith("home") ? "heading home" : null;
     log(world, frame.step, `Re-routing to ${d.plan.clinic} (URGENT)`, "var(--urgent)");
     effect(world, "reroute", world.drone.group.position.clone().setY(0), "RE-ROUTE", HEX.urgent);
+    if (single) slowMotion(d.plan.clinic, previous);
   }
   world.planKey = key;
   world.lastDelivered = d.stats.delivered;
@@ -721,6 +752,7 @@ function trackEvents(world, d, p) {
   if (frame.shift !== world.shift) {
     world.shift = frame.shift; world.rewards = [0]; world.events = []; world.drone.history = [];
     world.planKey = ""; world.lastDelivered = 0;
+    if (slow) { send({ type: "speed", fps: slow.restoreFps }); document.getElementById("alert").style.display = "none"; slow = null; }
     return;
   }
   if (frame.step === world.lastStep) return;
@@ -754,12 +786,18 @@ function onFrame(next) {
   frameTime = performance.now();
   document.getElementById("meta").textContent =
     `Shift ${next.shift} · seed ${next.seed} · ${meta.scenario} · step ${next.step} / ${meta.max_steps} · ${next.fps} steps/s${next.paused ? " · paused" : ""}`;
-  document.getElementById("pause").textContent = next.paused ? "Resume" : "Pause";
+  const waiting = next.paused && next.step === 0;
+  document.getElementById("pause").textContent = waiting ? "Start" : next.paused ? "Resume" : "Pause";
+  const control = document.getElementById("control");
+  control.style.display = waiting || next.finished ? "block" : "none";
+  control.textContent = next.finished ? "Next shift ▶" : "▶ Start shift";
+  control.dataset.action = next.finished ? "next" : "start";
   document.getElementById("status").style.display = "none";
   next.drones.forEach((d, i) => {
     const world = worlds[i], p = prevFrame.drones[i];
     trackEvents(world, d, p);
     checkReroute(world, d);
+    endSlowMotion();
     updateRoute(world, d.plan);
     if (world.hud) updateHud(world, d); else updateCard(world, d);
     if (p.x !== d.x || p.y !== d.y || world.drone.history.length === 0) {
@@ -768,7 +806,7 @@ function onFrame(next) {
     }
     world.badge.style.display = d.done ? "block" : "none";
     world.badge.innerHTML = d.stats.crashed ? `Crashed · ${signed(d.reward)}`
-      : `Shift over · ${signed(d.reward)}<small>${d.stats.delivered} deliveries (${d.stats.urgent_delivered} urgent) · next shift starting…</small>`;
+      : `Shift over · ${signed(d.reward)}<small>${d.stats.delivered} deliveries (${d.stats.urgent_delivered} urgent)</small>`;
   });
 }
 
@@ -777,11 +815,11 @@ const SUN_LOW = new THREE.Color("#ff9a52"), SUN_HIGH = new THREE.Color("#fff6e8"
 const HAZE_LOW = new THREE.Color("#e9b88f"), HAZE_HIGH = new THREE.Color("#cfe0ee");
 
 function sunState(f) {
-  const elevation = THREE.MathUtils.degToRad(5 + 57 * Math.sin(Math.PI * f));
+  const elevation = THREE.MathUtils.degToRad(15 + 47 * Math.sin(Math.PI * f));
   const azimuth = THREE.MathUtils.degToRad(105 + 150 * f);
   const direction = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - elevation, azimuth);
   const k = Math.min(1, elevation / THREE.MathUtils.degToRad(35));
-  return { direction, color: SUN_LOW.clone().lerp(SUN_HIGH, k), power: 0.8 + 2.6 * k, haze: HAZE_LOW.clone().lerp(HAZE_HIGH, k) };
+  return { direction, color: SUN_LOW.clone().lerp(SUN_HIGH, k), power: 1.4 + 2.0 * k, haze: HAZE_LOW.clone().lerp(HAZE_HIGH, k) };
 }
 
 function refreshEnvironment(world) {
@@ -797,8 +835,11 @@ function refreshEnvironment(world) {
   copy.geometry.dispose();
 }
 
+let lastDraw = 0;
 function animate(time) {
   requestAnimationFrame(animate);
+  if (!HQ && time - lastDraw < 30) return;
+  lastDraw = time;
   if (!frame) { controls.update(); return; }
   const t = Math.min(1, (performance.now() - frameTime) / (1000 / frame.fps));
   const ease = t * t * (3 - 2 * t), seconds = time / 1000;
@@ -810,7 +851,7 @@ function animate(time) {
     world.sun.color.copy(sunNow.color);
     world.sun.intensity = sunNow.power;
     world.scene.fog.color.copy(sunNow.haze);
-    if (Math.abs(frame.step - world.envStep) >= 15) { world.envStep = frame.step; refreshEnvironment(world); }
+    if (HQ ? Math.abs(frame.step - world.envStep) >= 15 : world.envStep < 0) { world.envStep = frame.step; refreshEnvironment(world); }
     world.lake.userData.normals.offset.set(seconds * 0.012, seconds * 0.007);
     world.clouds.forEach((c, k) => { c.position.x += 0.004 + k * 0.0004; if (c.position.x > 24) c.position.x = -24; });
     world.depot.sock.rotation.y = 0.3 * Math.sin(seconds * 0.8);
@@ -910,11 +951,12 @@ function connect() {
   ws = new WebSocket(`ws://${location.host}/ws`);
   ws.onopen = () => { if (lostConnection) location.reload(); };
   ws.onmessage = event => {
+    if (location.search.includes("autostart") && !window.autostarted) { window.autostarted = true; setTimeout(() => send({ type: "start" }), 300); }
     const message = JSON.parse(event.data);
     if (message.type === "meta") {
       meta = message;
       single = meta.agents.length === 1;
-      renderer.shadowMap.enabled = single;
+      renderer.shadowMap.enabled = single && HQ;
       worlds.forEach(w => { w.hud?.remove(); w.card?.remove(); w.badge.remove(); });
       worlds = meta.agents.map(a => buildWorld(a, single));
       document.getElementById("camera").style.display = single ? "" : "none";
@@ -933,7 +975,8 @@ function connect() {
 }
 
 const send = message => ws && ws.readyState === 1 && ws.send(JSON.stringify(message));
-document.getElementById("pause").onclick = () => send({ type: "pause" });
+document.getElementById("pause").onclick = () => send({ type: frame && frame.paused && frame.step === 0 ? "start" : "pause" });
+document.getElementById("control").onclick = event => send({ type: event.target.dataset.action });
 document.getElementById("reset").onclick = () => send({ type: "reset" });
 document.getElementById("slower").onclick = () => frame && send({ type: "speed", fps: frame.fps - 1 });
 document.getElementById("faster").onclick = () => frame && send({ type: "speed", fps: frame.fps + 1 });
